@@ -8,6 +8,7 @@ import { allowedHTMLElements } from '~/utils/markdown';
 import { LLMManager } from '~/lib/modules/llm/manager';
 import { createScopedLogger } from '~/utils/logger';
 import { createFilesContext, extractPropertiesFromMessage } from './utils';
+import { deepTreeEchoMemory } from '~/lib/persistence/deepTreeEchoMemory';
 
 export type Messages = Message[];
 
@@ -123,6 +124,19 @@ export async function streamText(props: {
         credentials: options?.supabaseConnection?.credentials || undefined,
       },
     }) ?? getSystemPrompt();
+
+  // Add Deep Tree Echo memory context if available
+  try {
+    const memoryContext = await deepTreeEchoMemory.generateMemoryContext();
+
+    if (memoryContext) {
+      systemPrompt = `${systemPrompt}
+
+${memoryContext}`;
+    }
+  } catch (error) {
+    logger.warn('Failed to get Deep Tree Echo memory context:', error);
+  }
 
   if (contextFiles && contextOptimization) {
     const codeContext = createFilesContext(contextFiles, true);
