@@ -1,7 +1,7 @@
 import type { Message } from 'ai';
 import { createScopedLogger } from '~/utils/logger';
 import type { ChatHistoryItem } from './useChatHistory';
-import type { Snapshot } from './types'; // Import Snapshot type
+import type { Snapshot, DeepTreeEchoMemory } from './types'; // Import types
 
 export interface IChatMetadata {
   gitUrl: string;
@@ -19,7 +19,7 @@ export async function openDatabase(): Promise<IDBDatabase | undefined> {
   }
 
   return new Promise((resolve) => {
-    const request = indexedDB.open('boltHistory', 2);
+    const request = indexedDB.open('boltHistory', 3);
 
     request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
       const db = (event.target as IDBOpenDBRequest).result;
@@ -36,6 +36,15 @@ export async function openDatabase(): Promise<IDBDatabase | undefined> {
       if (oldVersion < 2) {
         if (!db.objectStoreNames.contains('snapshots')) {
           db.createObjectStore('snapshots', { keyPath: 'chatId' });
+        }
+      }
+
+      if (oldVersion < 3) {
+        if (!db.objectStoreNames.contains('deepTreeEchoMemories')) {
+          const memoriesStore = db.createObjectStore('deepTreeEchoMemories', { keyPath: 'id' });
+          memoriesStore.createIndex('timestamp', 'timestamp', { unique: false });
+          memoriesStore.createIndex('type', 'type', { unique: false });
+          memoriesStore.createIndex('importance', 'importance', { unique: false });
         }
       }
     };
@@ -340,4 +349,76 @@ export async function deleteSnapshot(db: IDBDatabase, chatId: string): Promise<v
       }
     };
   });
+}
+
+// Deep Tree Echo Memory Management Functions
+
+export async function storeDeepTreeEchoMemory(db: IDBDatabase, memory: DeepTreeEchoMemory): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('deepTreeEchoMemories', 'readwrite');
+    const store = transaction.objectStore('deepTreeEchoMemories');
+    const request = store.put(memory);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getDeepTreeEchoMemories(
+  db: IDBDatabase,
+  options?: {
+    type?: DeepTreeEchoMemory['type'];
+    importance?: DeepTreeEchoMemory['importance'];
+    limit?: number;
+    since?: string;
+  },
+): Promise<DeepTreeEchoMemory[]> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('deepTreeEchoMemories', 'readonly');
+    const store = transaction.objectStore('deepTreeEchoMemories');
+
+    let request: IDBRequest;
+
+    if (options?.type) {
+      const index = store.index('type');
+      request = index.getAll(options.type);
+    } else if (options?.importance) {
+      const index = store.index('importance');
+      request = index.getAll(options.importance);
+    } else {
+      request = store.getAll();
+    }
+
+    request.onsuccess = () => {
+      let memories = request.result as DeepTreeEchoMemory[];
+
+      // Filter by timestamp if specified
+      if (options?.since) {
+        memories = memories.filter((memory) => memory.timestamp >= options.since!);
+      }
+
+      // Sort by timestamp descending (most recent first)
+      memories.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      // Apply limit
+      if (options?.limit) {
+        memories = memories.slice(0, options.limit);
+      }
+
+      resolve(memories);
+    };
+
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getRecentDeepTreeEchoMemories(
+  db: IDBDatabase,
+  limit: number = 10,
+): Promise<DeepTreeEchoMemory[]> {
+  return getDeepTreeEchoMemories(db, { limit });
+}
+
+export async function getCriticalDeepTreeEchoMemories(db: IDBDatabase): Promise<DeepTreeEchoMemory[]> {
+  return getDeepTreeEchoMemories(db, { importance: 'critical' });
 }

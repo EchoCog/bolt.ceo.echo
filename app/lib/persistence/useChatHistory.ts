@@ -22,6 +22,8 @@ import type { Snapshot } from './types';
 import { webcontainer } from '~/lib/webcontainer';
 import { detectProjectCommands, createCommandActionsString } from '~/utils/projectCommands';
 import type { ContextAnnotation } from '~/types/context';
+import { deepTreeEchoMemory } from './deepTreeEchoMemory';
+import { ensureMemoriesInitialized } from './deepTreeEchoInit';
 
 export interface ChatHistoryItem {
   id: string;
@@ -192,7 +194,13 @@ ${value.content}
           toast.error('Failed to load chat: ' + error.message); // More specific error
         });
     } else {
-      // Handle case where there is no mixedId (e.g., new chat)
+      /*
+       * Handle case where there is no mixedId (e.g., new chat)
+       * Initialize Deep Tree Echo memories for new chats
+       */
+      ensureMemoriesInitialized().catch((error) => {
+        console.warn('Failed to initialize Deep Tree Echo memories:', error);
+      });
       setReady(true);
     }
   }, [mixedId, db, navigate, searchParams]); // Added db, navigate, searchParams dependencies
@@ -306,6 +314,13 @@ ${value.content}
       }
 
       takeSnapshot(messages[messages.length - 1].id, workbenchStore.files.get(), _urlId, chatSummary);
+
+      // Store insights in Deep Tree Echo memory for future conversations
+      try {
+        await deepTreeEchoMemory.extractInsightsFromConversation(messages);
+      } catch (error) {
+        console.warn('Failed to extract Deep Tree Echo insights:', error);
+      }
 
       if (!description.get() && firstArtifact?.title) {
         description.set(firstArtifact?.title);

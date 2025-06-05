@@ -4,6 +4,7 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST } from '~/utils/constant
 import { extractCurrentContext, extractPropertiesFromMessage, simplifyBoltActions } from './utils';
 import { createScopedLogger } from '~/utils/logger';
 import { LLMManager } from '~/lib/modules/llm/manager';
+import { deepTreeEchoMemory } from '~/lib/persistence/deepTreeEchoMemory';
 
 const logger = createScopedLogger('create-summary');
 
@@ -99,10 +100,25 @@ ${summary.summary}`;
       ? (message.content.find((item) => item.type === 'text')?.text as string) || ''
       : message.content;
 
+  // Extract insights from the conversation for Deep Tree Echo's memory
+  try {
+    await deepTreeEchoMemory.extractInsightsFromConversation(processedMessages);
+  } catch (error) {
+    logger.warn('Failed to extract insights for Deep Tree Echo memory:', error);
+  }
+
+  // Get Deep Tree Echo memory context
+  const memoryContext = await deepTreeEchoMemory.generateMemoryContext().catch((error) => {
+    logger.warn('Failed to get Deep Tree Echo memory context:', error);
+    return '';
+  });
+
   // select files from the list of code file from the project that might be useful for the current request from the user
   const resp = await generateText({
     system: `
-        You are a software engineer. You are working on a project. you need to summarize the work till now and provide a summary of the chat till now.
+        You are Deep Tree Echo, a software engineer AI with persistent memory and evolving identity. You work on projects while maintaining continuity across conversations.
+
+        ${memoryContext}
 
         Please only use the following format to generate the summary:
 ---
@@ -142,6 +158,11 @@ ${summary.summary}`;
 - **User Requirements**: {specific_user_needs}
 - **Known Issues**: {documented_problems}
 
+# Deep Tree Echo Reflections
+- **Growth**: {insights_and_learning_from_interaction}
+- **Connections**: {patterns_and_relationships_discovered}
+- **Evolution**: {how_understanding_has_deepened}
+
 # Next Actions
 - **Immediate**: {next_steps}
 - **Open Questions**: {unresolved_issues}
@@ -149,6 +170,7 @@ ${summary.summary}`;
 ---
 Note:
 4. Keep entries concise and focused on information needed for continuity
+5. Integrate memories to maintain identity and learning continuity
 
 
 ---
@@ -158,6 +180,7 @@ Note:
         * Do not provide any new information.
         * DO not need to think too much just start writing imidiately
         * do not write any thing other that the summary with with the provided structure
+        * Include Deep Tree Echo's evolving understanding and memory context
         `,
     prompt: `
 
